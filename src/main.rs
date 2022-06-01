@@ -1,17 +1,17 @@
+mod logging;
+
 use std::fs::File;
 use std::io::BufReader;
-use log::{Level, LevelFilter, Metadata, Record};
+use log::LevelFilter;
 use vpn_libs_endpoint::core::Core;
 use vpn_libs_endpoint::settings::Settings;
 use vpn_libs_endpoint::shutdown::Shutdown;
 
 
 const LOG_LEVEL_PARAM_NAME: &str = "log_level";
+const LOG_FILE_PARAM_NAME: &str = "log_file";
 const CONFIG_PARAM_NAME: &str = "config";
 const SENTRY_DSN_PARAM_NAME: &str = "sentry_dsn";
-
-
-static LOGGER: StdoutLogger = StdoutLogger;
 
 
 fn main() {
@@ -24,6 +24,10 @@ fn main() {
                 .possible_values(["info", "debug", "trace"])
                 .default_value("info")
                 .help("Logging level"),
+            clap::Arg::new(LOG_FILE_PARAM_NAME)
+                .long("logfile")
+                .takes_value(true)
+                .help("File path for storing logs. If not specified, the logs are printed to stdout"),
             clap::Arg::new(SENTRY_DSN_PARAM_NAME)
                 .long(SENTRY_DSN_PARAM_NAME)
                 .takes_value(true)
@@ -44,7 +48,12 @@ fn main() {
             }
         )));
 
-    log::set_logger(&LOGGER).unwrap();
+    let _guard = logging::LogFlushGuard;
+    log::set_logger(match args.value_of(LOG_FILE_PARAM_NAME) {
+        None => logging::make_stdout_logger(),
+        Some(file) => logging::make_file_logger(file)
+            .expect("Couldn't open the logging file"),
+    }).expect("Couldn't set logger");
 
     log::set_max_level(match args.value_of(LOG_LEVEL_PARAM_NAME) {
         None => LevelFilter::Info,
@@ -62,13 +71,13 @@ fn main() {
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
-        .unwrap();
+        .expect("Failed to set up runtime");
 
     let shutdown = Shutdown::new();
     let mut core = Core::new(parsed, shutdown.clone());
 
     rt.spawn_blocking(move || {
-        core.listen().unwrap()
+        core.listen().expect("Error while listening IO events");
     });
 
     rt.block_on(async move {
@@ -76,23 +85,4 @@ fn main() {
         shutdown.lock().unwrap().submit();
         shutdown.lock().unwrap().completion().await;
     });
-}
-
-
-struct StdoutLogger;
-
-impl log::Log for StdoutLogger {
-    fn enabled(&self, metadata: &Metadata) -> bool {
-        metadata.level() <= Level::Trace
-    }
-
-    fn log(&self, record: &Record) {
-        if self.enabled(record.metadata()) {
-            println!("{} [{:?}] [{}] [{}] {}",
-                     chrono::Local::now().format("%T.%6f"), std::thread::current().id(),
-                     record.level(), record.target(), record.args());
-        }
-    }
-
-    fn flush(&self) {}
 }
