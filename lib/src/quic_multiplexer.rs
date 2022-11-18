@@ -291,6 +291,12 @@ impl QuicMultiplexer {
                 Ok(ServerNameCheckStatus::RetryAs(
                     settings.ping_tls_host_info.as_ref().unwrap(),
                 )),
+            Some(x) if settings.speed_tls_host_info.as_ref().map_or(
+                false, |info| info.hostname == x
+            ) =>
+                Ok(ServerNameCheckStatus::RetryAs(
+                    settings.speed_tls_host_info.as_ref().unwrap(),
+                )),
             Some(x) if settings.reverse_proxy.as_ref().map_or(
                 false, |s| s.tls_info.hostname == x
             ) =>

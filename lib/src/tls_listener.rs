@@ -29,7 +29,7 @@ impl TlsListener {
     }
 
     pub async fn listen(&self, stream: TcpStream) -> io::Result<TlsAcceptor> {
-        LazyConfigAcceptor::new(rustls::server::Acceptor::new().unwrap(), stream)
+        LazyConfigAcceptor::new(rustls::server::Acceptor::default(), stream)
             .await
             .map(|hs| TlsAcceptor {
                 inner: hs,
@@ -54,12 +54,17 @@ impl TlsAcceptor {
         let settings = &self.core_settings;
         let tunnel_tls_info = &settings.tunnel_tls_host_info;
         let ping_tls_info = settings.ping_tls_host_info.as_ref();
+        let speed_tls_info = settings.speed_tls_host_info.as_ref();
         let sm_tls_info = settings.reverse_proxy.as_ref().map(|x| &x.tls_info);
 
         let (cert_file, key_file) = match channel {
             Channel::Ping(_) => (
                 &ping_tls_info.unwrap().cert_chain_path,
                 &ping_tls_info.unwrap().private_key_path,
+            ),
+            Channel::Speed(_) => (
+                &speed_tls_info.unwrap().cert_chain_path,
+                &speed_tls_info.unwrap().private_key_path,
             ),
             Channel::ReverseProxy(_) => (
                 &sm_tls_info.unwrap().cert_chain_path,

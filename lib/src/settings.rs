@@ -5,11 +5,12 @@ use std::net::{Ipv4Addr, SocketAddr, ToSocketAddrs};
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
+
 use serde::Deserialize;
+
 use crate::authentication::Authenticator;
 use crate::authentication::file_based::FileBasedAuthenticator;
 use crate::authentication::radius::RadiusAuthenticator;
-
 
 pub type BuilderResult<T> = Result<T, BuilderError>;
 pub type Socks5BuilderResult<T> = Result<T, Socks5Error>;
@@ -22,6 +23,8 @@ pub enum ValidationError {
     TunnelTlsHostInfo(String),
     /// Invalid [`Settings.ping_tls_host_info`]
     PingTlsHostInfo(String),
+    /// Invalid [`Settings.speed_tls_host_info`]
+    SpeedTlsHostInfo(String),
     /// Invalid [`Settings.reverse_proxy`]
     ReverseProxy(String),
     /// [`Settings.listen_protocols`] are not set
@@ -53,13 +56,24 @@ pub struct Settings {
     /// The address to listen on
     #[serde(default = "Settings::default_listen_address")]
     pub(crate) listen_address: SocketAddr,
-    /// The TLS host info for traffic tunneling
+    /// The TLS host info for traffic tunneling.
+    /// The host name MUST differ from the pinging, speed testing and reverse proxy hosts.
     pub(crate) tunnel_tls_host_info: TlsHostInfo,
     /// The TLS host info for HTTPS pinging.
     /// With this one set up the endpoint will respond with `200 OK` to HTTPS `GET` requests
     /// to the specified domain.
-    /// The host name MUST differ from the tunneling host and reverse proxy ones.
+    /// The host name MUST differ from the tunneling, speed testing and reverse proxy hosts.
     pub(crate) ping_tls_host_info: Option<TlsHostInfo>,
+    /// The TLS host info for speed testing.
+    /// With this one set up the endpoint accepts connections to the specified host and
+    /// handles HTTP requests in the following way:
+    ///     * `GET` requests with `/Nmb.bin` path (where `N` is 1 to 100, e.g. `/100mb.bin`)
+    ///       are considered as download speedtest transferring `N` megabytes to a client
+    ///     * `POST` requests with `/upload.html` path and `Content-Length: N`
+    ///       are considered as upload speedtest receiving `N` bytes from a client,
+    ///       where `N` is up to 120 * 1024 * 1024 bytes
+    /// The host name MUST differ from the tunneling, pinging and reverse proxy hosts.
+    pub(crate) speed_tls_host_info: Option<TlsHostInfo>,
     /// The reverse proxy settings.
     /// See [`SettingsBuilder::reverse_proxy`] for detailed description.
     pub(crate) reverse_proxy: Option<ReverseProxySettings>,
@@ -131,7 +145,7 @@ pub struct ReverseProxySettings {
     /// The origin server address
     pub server_address: SocketAddr,
     /// The TLS host info.
-    /// The host name MUST differ from the tunneling host and HTTPS pinging ones.
+    /// The host name MUST differ from the tunneling, HTTPS pinging and speed testing hosts.
     pub tls_info: TlsHostInfo,
     /// The connection timeout
     #[serde(default = "Settings::default_tcp_connections_timeout")]
@@ -370,16 +384,11 @@ impl Settings {
             ))?;
 
         if let Some(x) = &self.ping_tls_host_info {
-            if x.hostname == self.tunnel_tls_host_info.hostname {
+            if x.hostname == self.tunnel_tls_host_info.hostname
+                || self.speed_tls_host_info.as_ref().map_or(false, |h| x.hostname == h.hostname)
+                || self.reverse_proxy.as_ref().map_or(false, |s| x.hostname == s.tls_info.hostname) {
                 return Err(ValidationError::PingTlsHostInfo(
-                    "Host name equals to tunneling one".into()
-                ));
-            }
-            if self.reverse_proxy.as_ref()
-                .map_or(false, |s| x.hostname == s.tls_info.hostname)
-            {
-                return Err(ValidationError::PingTlsHostInfo(
-                    "Host name equals to reverse proxy one".into()
+                    "Host name must be unique".into()
                 ));
             }
             validate_file_path(&x.cert_chain_path)
@@ -392,22 +401,35 @@ impl Settings {
                 ))?;
         }
 
+        if let Some(x) = &self.speed_tls_host_info {
+            if x.hostname == self.tunnel_tls_host_info.hostname
+                || self.ping_tls_host_info.as_ref().map_or(false, |h| x.hostname == h.hostname)
+                || self.reverse_proxy.as_ref().map_or(false, |s| x.hostname == s.tls_info.hostname) {
+                return Err(ValidationError::SpeedTlsHostInfo(
+                    "Host name must be unique".into()
+                ));
+            }
+            validate_file_path(&x.cert_chain_path)
+                .map_err(|e| ValidationError::SpeedTlsHostInfo(
+                    format!("Invalid cert chain path: {}", e)
+                ))?;
+            validate_file_path(&x.private_key_path)
+                .map_err(|e| ValidationError::SpeedTlsHostInfo(
+                    format!("Invalid key path: {}", e)
+                ))?;
+        }
+
         if let Some(x) = &self.reverse_proxy {
             if x.server_address.ip().is_unspecified() && x.server_address.port() == 0 {
                 return Err(ValidationError::ReverseProxy(
                     "Invalid origin server address".into()
                 ));
             }
-            if x.tls_info.hostname == self.tunnel_tls_host_info.hostname {
+            if x.tls_info.hostname == self.tunnel_tls_host_info.hostname
+                || self.ping_tls_host_info.as_ref().map_or(false, |h| x.tls_info.hostname == h.hostname)
+                || self.speed_tls_host_info.as_ref().map_or(false, |h| x.tls_info.hostname == h.hostname) {
                 return Err(ValidationError::ReverseProxy(
-                    "Host name equals to tunneling one".into()
-                ));
-            }
-            if self.ping_tls_host_info.as_ref()
-                .map_or(false, |i| x.tls_info.hostname == i.hostname)
-            {
-                return Err(ValidationError::ReverseProxy(
-                    "Host name equals to HTTPS pinging one".into()
+                    "Host name must be unique".into()
                 ));
             }
             validate_file_path(&x.tls_info.cert_chain_path)
@@ -464,6 +486,7 @@ impl Default for Settings {
             listen_address: SocketAddr::from((Ipv4Addr::UNSPECIFIED, 0)),
             tunnel_tls_host_info: Default::default(),
             ping_tls_host_info: None,
+            speed_tls_host_info: None,
             reverse_proxy: None,
             ipv6_available: false,
             tls_handshake_timeout: Default::default(),
@@ -643,6 +666,7 @@ impl SettingsBuilder {
                 listen_address: Settings::default_listen_address(),
                 tunnel_tls_host_info: Default::default(),
                 ping_tls_host_info: None,
+                speed_tls_host_info: None,
                 reverse_proxy: None,
                 ipv6_available: Settings::default_ipv6_available(),
                 tls_handshake_timeout: Settings::default_tls_handshake_timeout(),
@@ -1173,7 +1197,7 @@ fn deserialize_file_path<'de, D>(deserializer: D) -> Result<String, D::Error>
                 .map(|_| v.to_string())
                 .map_err(|e| E::invalid_value(
                     serde::de::Unexpected::Other(&format!("path={} error={}", v, e)),
-                    &Visitor {}
+                    &Visitor {},
                 ))
         }
     }
@@ -1190,7 +1214,7 @@ fn deserialize_authenticator<'de, D>(deserializer: D) -> Result<Option<Arc<dyn A
             FileBasedAuthenticator::new(&x.path)
                 .map_err(|e| serde::de::Error::invalid_value(
                     serde::de::Unexpected::Other(&format!("authenticator initialization error: {}", e)),
-                    &"a file with valid authentication info"
+                    &"a file with valid authentication info",
                 ))?
         ))),
         AuthenticatorSettings::Radius(x) => Ok(Some(Arc::new(

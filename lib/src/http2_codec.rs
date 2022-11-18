@@ -252,6 +252,10 @@ impl<'a> std::future::Future for WaitWritable<'a> {
     type Output = io::Result<()>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        if self.stream.capacity() > 0 {
+            return Poll::Ready(Ok(()));
+        }
+
         Poll::Ready(
             match futures::ready!(self.stream.poll_capacity(cx)) {
                 None => Err(io::Error::from(ErrorKind::UnexpectedEof)),

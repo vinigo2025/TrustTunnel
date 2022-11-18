@@ -113,7 +113,7 @@ impl<IO> Http1Codec<IO>
                 Ok(RequestStatus::Partial)
             }
             DecodeStatus::Complete(request, tail) => {
-                if request.headers.contains_key("expect") {
+                if request.method == http::Method::CONNECT && request.headers.contains_key("expect") {
                     return Ok(RequestStatus::NeedRespond(http::response::Builder::new()
                         .version(request.version)
                         .status(http::StatusCode::EXPECTATION_FAILED)

@@ -35,5 +35,6 @@ mod http_icmp_codec;
 mod icmp_forwarder;
 mod metrics;
 mod http_ping_handler;
+mod http_speedtest_handler;
 mod reverse_proxy;
 mod socks5_client;

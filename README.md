@@ -44,7 +44,8 @@ The full set of settings is shown bellow in the pseudo-json format:
   "threads_number": Default(number of CPUs),
   /// The address to listen on
   "listen_address": Default("0.0.0.0:433"),
-  /// The TLS host info for traffic tunneling
+  /// The TLS host info for traffic tunneling.
+  /// The host name MUST differ from the pinging, speed testing and reverse proxy hosts.
   "tunnel_tls_host_info": {
     "hostname": "localhost",
     /// Path to a file containing the certificate chain
@@ -62,6 +63,20 @@ The full set of settings is shown bellow in the pseudo-json format:
     "cert_chain_path": "cert.pem",
     "private_key_path": "key.pem"
   },
+  /// The TLS host info for speed testing.
+  /// With this one set up the endpoint accepts connections to the specified host and
+  /// handles HTTP requests in the following way:
+  ///     * `GET` requests with `/Nmb.bin` path (where `N` is 1 to 100, e.g. `/100mb.bin`)
+  ///       are considered as download speedtest transferring `N` megabytes to a client
+  ///     * `POST` requests with `/upload.html` path and `Content-Length: N`
+  ///       are considered as upload speedtest receiving `N` bytes from a client,
+  ///       where `N` is up to 120 * 1024 * 1024 bytes
+  /// The host name MUST differ from the tunneling, pinging and reverse proxy hosts.
+  "speed_tls_host_info": {
+    "hostname": "speed.localhost",
+    "cert_chain_path": "cert.pem",
+    "private_key_path": "key.pem"
+  },
   /// The reverse proxy settings.
   /// With this one set up the endpoint does TLS termination on such connections and
   /// translates HTTP/x traffic into HTTP/1.1 protocol towards the server and back
@@ -75,6 +90,7 @@ The full set of settings is shown bellow in the pseudo-json format:
     /// The origin server address
     "server_address": "127.0.0.1:1111",
     "tls_info": {
+      /// The host name MUST differ from the tunneling, HTTPS pinging and speed testing hosts.
       "hostname": "hello.localhost",
       "cert_chain_path": "cert.pem",
       "private_key_path": "key.pem"

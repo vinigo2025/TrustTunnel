@@ -15,6 +15,7 @@ pub(crate) enum Protocol {
 pub(crate) enum Channel {
     Tunnel(Protocol),
     Ping(Protocol),
+    Speed(Protocol),
     ReverseProxy(Protocol),
 }
 
@@ -42,6 +43,7 @@ impl Channel {
         match self {
             Self::Tunnel(proto) => proto.as_alpn(),
             Self::Ping(proto) => proto.as_alpn(),
+            Self::Speed(proto) => proto.as_alpn(),
             Self::ReverseProxy(proto) => proto.as_alpn(),
         }
     }
@@ -70,6 +72,8 @@ pub(crate) fn select(settings: &Settings, alpn: Option<&str>, sni: &str) -> io::
         }
     } else if Some(sni) == settings.ping_tls_host_info.as_ref().map(|i| i.hostname.as_str()) {
         Channel::Ping(proto)
+    } else if Some(sni) == settings.speed_tls_host_info.as_ref().map(|i| i.hostname.as_str()) {
+        Channel::Speed(proto)
     } else {
         Channel::Tunnel(proto)
     };

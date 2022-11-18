@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::{TcpListener, UdpSocket};
 use crate::direct_forwarder::DirectForwarder;
-use crate::{authentication, http_ping_handler, log_id, log_utils, metrics, net_utils, protocol_selector, reverse_proxy, settings, tunnel, utils};
+use crate::{authentication, http_ping_handler, http_speedtest_handler, log_id, log_utils, metrics, net_utils, protocol_selector, reverse_proxy, settings, tunnel, utils};
 use crate::authentication::RedirectToForwarderAuthenticator;
 use crate::protocol_selector::{Channel, Protocol};
 use crate::forwarder::Forwarder;
@@ -263,6 +263,7 @@ impl Core {
             match protocol_selector::select(&core_settings, alpn.as_deref(), &sni) {
                 Ok(Channel::Tunnel(Protocol::Http3))
                 | Ok(Channel::Ping(Protocol::Http3))
+                | Ok(Channel::Speed(Protocol::Http3))
                 | Ok(Channel::ReverseProxy(Protocol::Http3))
                 => {
                     return Err((client_id, "Unexpected connection protocol - dropping tunnel".to_string()));
@@ -312,6 +313,16 @@ impl Core {
                 },
                 client_id,
             ).await,
+            Channel::Speed(protocol) => http_speedtest_handler::listen(
+                match Self::make_tcp_http_codec(
+                    protocol, core_settings.clone(), stream, client_id.clone(),
+                ) {
+                    Ok(x) => x,
+                    Err(e) => return Err((client_id, format!("Failed to create HTTP codec: {}", e))),
+                },
+                core_settings.client_listener_timeout,
+                client_id,
+            ).await,
             Channel::ReverseProxy(protocol) => reverse_proxy::listen(
                 context,
                 match Self::make_tcp_http_codec(
@@ -348,6 +359,7 @@ impl Core {
             match protocol_selector::select(&core_settings, Some(&alpn), &sni) {
                 Ok(x) if x == Channel::Tunnel(Protocol::Http3)
                     || x == Channel::Ping(Protocol::Http3)
+                    || x == Channel::Speed(Protocol::Http3)
                     || x == Channel::ReverseProxy(Protocol::Http3)
                 => x,
                 Ok(x) => {
@@ -377,6 +389,11 @@ impl Core {
             }
             Channel::Ping(_) => http_ping_handler::listen(
                 Box::new(Http3Codec::new(socket, client_id.clone())),
+                client_id,
+            ).await,
+            Channel::Speed(_) => http_speedtest_handler::listen(
+                Box::new(Http3Codec::new(socket, client_id.clone())),
+                core_settings.client_listener_timeout,
                 client_id,
             ).await,
             Channel::ReverseProxy(_) => reverse_proxy::listen(
