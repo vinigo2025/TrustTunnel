@@ -189,7 +189,7 @@ h3_backward_compatibility = false
 # Setting up this feature requires superuser rights on some systems.
 [icmp]
 # (Required) The name of a network interface to bind the outbound ICMP socket to.
-interface_name = "en0"
+interface_name = "eth0"
 # Timeout of tunneled ICMP requests in seconds.
 # Default is 3s.
 request_timeout_secs = 3
