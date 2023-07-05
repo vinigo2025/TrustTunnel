@@ -2,6 +2,8 @@
 
 set -e
 
+MANIFEST_FILE=$2
+
 increment_version() {
   major=${1%%.*}
   minor=$(echo ${1#*.} | sed -e "s/\.[0-9]*//")
@@ -9,7 +11,7 @@ increment_version() {
   echo ${major}.${minor}.$((revision+1))
 }
 
-VERSION=$(cat Cargo.toml | grep "version = " | head -n 1 | sed -e 's/version = "\(.*\)"/\1/')
+VERSION=$(cat "$MANIFEST_FILE" | grep "version = " | head -n 1 | sed -e 's/version = "\(.*\)"/\1/')
 
 argument_version=$1
 if [ -z "$argument_version" ]
@@ -30,7 +32,7 @@ echo "New version is ${NEW_VERSION}"
 
 set -x
 
-sed -i -e "s/^version = \"${VERSION}\"$/version = \"${NEW_VERSION}\"/" Cargo.toml
+sed -i -e "s/^version = \"${VERSION}\"$/version = \"${NEW_VERSION}\"/" "$MANIFEST_FILE"
 
 # Update changelog
 sed -i -e "3{

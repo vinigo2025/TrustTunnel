@@ -22,7 +22,7 @@ pub fn hex_dump_uppercase(buf: &[u8]) -> String {
 }
 
 /// Can hold either of the options
-pub(crate) enum Either<L, R> {
+pub enum Either<L, R> {
     Left(L),
     Right(R),
 }
@@ -71,16 +71,55 @@ impl<L, R> Either<L, R> {
     }
 }
 
-pub(crate) fn load_certs(filename: &str) -> io::Result<Vec<Certificate>> {
+pub fn load_certs(filename: &str) -> io::Result<Vec<Certificate>> {
     certs(&mut BufReader::new(File::open(filename)?))
         .map_err(|e| io::Error::new(
             ErrorKind::InvalidInput, format!("Invalid cert: {}", e)))
         .map(|mut certs| certs.drain(..).map(Certificate).collect())
 }
 
-pub(crate) fn load_private_key(filename: &str) -> io::Result<PrivateKey> {
+pub fn load_private_key(filename: &str) -> io::Result<PrivateKey> {
     pkcs8_private_keys(&mut BufReader::new(File::open(filename)?))
         .map_err(|e| io::Error::new(
             ErrorKind::InvalidInput, format!("Invalid key: {}", e)))
-        .map(|mut keys| PrivateKey(keys.remove(0)))
+        .and_then(|keys| keys.first().cloned()
+            .ok_or_else(|| io::Error::new(ErrorKind::Other, "No keys found")))
+        .map(PrivateKey)
+}
+
+pub trait IterJoin {
+    type Output;
+
+    /// Like [`Iterator::fold`] but drops the trailing separator
+    fn join(self, sep: impl AsRef<str>) -> Self::Output;
+}
+
+impl<I, T> IterJoin for I
+    where
+        I: Iterator<Item=T>,
+        T: AsRef<str>,
+{
+    type Output = String;
+
+    fn join(self, sep: impl AsRef<str>) -> Self::Output {
+        let mut ret = self
+            .fold(String::new(), |acc, x| acc + x.as_ref() + sep.as_ref());
+        if ret.len() > sep.as_ref().len() {
+            ret.replace_range((ret.len() - sep.as_ref().len()).., "");
+        }
+
+        ret
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::utils::IterJoin;
+
+    #[test]
+    fn iter_join() {
+        assert_eq!("a.b.c", ["a", "b", "c"].iter().join("."));
+        assert_eq!("a", std::iter::once("a").join("x"));
+        assert_eq!("", std::iter::empty::<&str>().join("x"));
+    }
 }

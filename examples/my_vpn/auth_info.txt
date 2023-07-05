@@ -1,7 +1,0 @@
-[[client]]
-username = "premium"
-password = "premium"
-
-[[client]]
-username = "free"
-password = "free"

@@ -6,11 +6,14 @@ use std::net::{Ipv4Addr, SocketAddr, ToSocketAddrs};
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
+
+#[cfg(feature = "rt_doc")]
+use macros::{Getter, RuntimeDoc};
+use serde::{Deserialize, Serialize};
+use toml_edit::{Document, Item};
 use authentication::registry_based::RegistryBasedAuthenticator;
 use crate::authentication::Authenticator;
 use crate::{authentication, utils};
-use serde::Deserialize;
-use toml_edit::{Document, Item};
 
 pub type Socks5BuilderResult<T> = Result<T, Socks5Error>;
 
@@ -55,49 +58,48 @@ impl Debug for Socks5Error {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "rt_doc", derive(Getter, RuntimeDoc))]
 pub struct Settings {
     /// The address to listen on
     #[serde(default = "Settings::default_listen_address")]
     pub(crate) listen_address: SocketAddr,
-    /// See [`SettingsBuilder::reverse_proxy`]
-    pub(crate) reverse_proxy: Option<ReverseProxySettings>,
-    /// IPv6 availability
+    /// Whether IPv6 connections can be routed or rejected with unreachable status
     #[serde(default = "Settings::default_ipv6_available")]
     pub(crate) ipv6_available: bool,
     /// Whether connections to private network of the endpoint are allowed
     #[serde(default = "Settings::default_allow_private_network_connections")]
     pub(crate) allow_private_network_connections: bool,
-    /// Timeout of a TLS handshake
+    /// Timeout of an incoming TLS handshake
     #[serde(default = "Settings::default_tls_handshake_timeout")]
-    #[serde(rename(deserialize = "tls_handshake_timeout_secs"))]
-    #[serde(deserialize_with = "deserialize_duration_secs")]
+    #[serde(rename = "tls_handshake_timeout_secs")]
+    #[serde(deserialize_with = "deserialize_duration_secs", serialize_with = "serialize_duration_secs")]
     pub(crate) tls_handshake_timeout: Duration,
     /// Timeout of a client listener
     #[serde(default = "Settings::default_client_listener_timeout")]
-    #[serde(rename(deserialize = "client_listener_timeout_secs"))]
-    #[serde(deserialize_with = "deserialize_duration_secs")]
+    #[serde(rename = "client_listener_timeout_secs")]
+    #[serde(deserialize_with = "deserialize_duration_secs", serialize_with = "serialize_duration_secs")]
     pub(crate) client_listener_timeout: Duration,
-    /// Timeout of connection establishment. For example, it is related to
-    /// client's connection requests.
+    /// Timeout of outgoing connection establishment.
+    /// For example, it is related to client's connection requests.
     #[serde(default = "Settings::default_connection_establishment_timeout")]
-    #[serde(rename(deserialize = "connection_establishment_timeout_secs"))]
-    #[serde(deserialize_with = "deserialize_duration_secs")]
+    #[serde(rename = "connection_establishment_timeout_secs")]
+    #[serde(deserialize_with = "deserialize_duration_secs", serialize_with = "serialize_duration_secs")]
     pub(crate) connection_establishment_timeout: Duration,
-    /// Timeout of tunneled TCP connections
+    /// Idle timeout of tunneled TCP connections
     #[serde(default = "Settings::default_tcp_connections_timeout")]
-    #[serde(rename(deserialize = "tcp_connections_timeout_secs"))]
-    #[serde(deserialize_with = "deserialize_duration_secs")]
+    #[serde(rename = "tcp_connections_timeout_secs")]
+    #[serde(deserialize_with = "deserialize_duration_secs", serialize_with = "serialize_duration_secs")]
     pub(crate) tcp_connections_timeout: Duration,
     /// Timeout of tunneled UDP "connections"
     #[serde(default = "Settings::default_udp_connections_timeout")]
-    #[serde(rename(deserialize = "udp_connections_timeout_secs"))]
-    #[serde(deserialize_with = "deserialize_duration_secs")]
+    #[serde(rename = "udp_connections_timeout_secs")]
+    #[serde(deserialize_with = "deserialize_duration_secs", serialize_with = "serialize_duration_secs")]
     pub(crate) udp_connections_timeout: Duration,
-    /// The forwarder codec settings
+    /// The set of connection forwarder settings
     #[serde(default)]
     pub(crate) forward_protocol: ForwardProtocolSettings,
-    /// The listener codec settings
+    /// The set of enabled client listener codecs
     pub(crate) listen_protocols: ListenProtocolSettings,
     /// The client authenticator.
     ///
@@ -121,13 +123,25 @@ pub struct Settings {
     /// ...
     /// ```
     #[serde(default)]
+    #[serde(skip_serializing)]
     #[serde(rename(deserialize = "credentials_file"))]
     #[serde(deserialize_with = "deserialize_authenticator")]
     pub(crate) authenticator: Option<Arc<dyn Authenticator>>,
+    /// The reverse proxy settings.
+    /// With this one set up the endpoint does TLS termination on such connections and
+    /// translates HTTP/x traffic into HTTP/1.1 protocol towards the server and back
+    /// into original HTTP/x towards the client. Like this:
+    ///
+    /// ```(client) TLS(HTTP/x) <--(endpoint)--> (server) HTTP/1.1```
+    ///
+    /// The translated HTTP/1.1 requests have the custom header `X-Original-Protocol`
+    /// appended. For now, its value can be either `HTTP1`, or `HTTP3`.
+    /// TLS hosts for the reverse proxy channel are configured through [`TlsHostsSettings`].
+    pub(crate) reverse_proxy: Option<ReverseProxySettings>,
     /// The ICMP forwarding settings.
     /// Setting up this feature requires superuser rights on some systems.
     pub(crate) icmp: Option<IcmpSettings>,
-    /// The metrics handling settings
+    /// The metrics gathering request handler settings
     pub(crate) metrics: Option<MetricsSettings>,
 
     /// Whether an instance was built through a [`SettingsBuilder`].
@@ -138,7 +152,8 @@ pub struct Settings {
     built: bool,
 }
 
-#[derive(Default, Deserialize)]
+#[derive(Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "rt_doc", derive(RuntimeDoc))]
 pub struct TlsHostInfo {
     /// Used as a key for selecting a certificate chain in TLS handshake.
     /// MUST be unique.
@@ -158,18 +173,31 @@ pub struct TlsHostInfo {
     pub private_key_path: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Serialize, Deserialize)]
 #[cfg_attr(test, derive(Default))]
+#[cfg_attr(feature = "rt_doc", derive(RuntimeDoc))]
 pub struct TlsHostsSettings {
-    /// See [`TlsSettingsBuilder::main_hosts`]
+    /// Еhe main TLS hosts.
+    /// Used for traffic tunneling and service requests handling.
     pub(crate) main_hosts: Vec<TlsHostInfo>,
-    /// See [`TlsSettingsBuilder::ping_hosts`]
+    /// The TLS hosts for HTTPS pinging.
+    /// With this one set up the endpoint responds with `200 OK` to HTTPS `GET` requests
+    /// to the specified domains.
     #[serde(default)]
     pub(crate) ping_hosts: Vec<TlsHostInfo>,
-    /// See [`TlsSettingsBuilder::speedtest_hosts`]
+    /// The TLS hosts for speed testing.
+    /// With this one set up the endpoint accepts connections to the specified hosts and
+    /// handles HTTP requests in the following way:
+    ///     * `GET` requests with `/Nmb.bin` path (where `N` is 1 to 100, e.g. `/100mb.bin`)
+    ///       are considered as download speedtest transferring `N` megabytes to a client
+    ///     * `POST` requests with `/upload.html` path and `Content-Length: N`
+    ///       are considered as upload speedtest receiving `N` bytes from a client,
+    ///       where `N` is up to 120 * 1024 * 1024 bytes
     #[serde(default)]
     pub(crate) speedtest_hosts: Vec<TlsHostInfo>,
-    /// See [`TlsSettingsBuilder::reverse_proxy_hosts`]
+    /// The TLS hosts for the connections must be forwarded to the reverse proxy
+    /// (see [`Settings::reverse_proxy`]).
+    /// Only makes sense if the reverse proxy is set up, otherwise it is ignored.
     #[serde(default)]
     pub(crate) reverse_proxy_hosts: Vec<TlsHostInfo>,
 
@@ -181,19 +209,26 @@ pub struct TlsHostsSettings {
     built: bool,
 }
 
-#[derive(Deserialize)]
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "rt_doc", derive(RuntimeDoc))]
 pub struct ReverseProxySettings {
-    /// See [`ReverseProxySettingsBuilder::server_address`]
+    /// The origin server address
     pub(crate) server_address: SocketAddr,
-    /// See [`ReverseProxySettingsBuilder::path_mask`]
+    /// Connections to [the main hosts](TlsHostsSettings.main_hosts) with
+    /// paths starting with this mask are routed to the reverse proxy server.
+    /// MUST start with slash.
     pub(crate) path_mask: String,
-    /// See [`ReverseProxySettingsBuilder::h3_backward_compatibility`]
+    /// With this one set to `true` the endpoint overrides the HTTP method while
+    /// translating an HTTP3 request to HTTP1 in case the request has the `GET` method
+    /// and its path is `/` or matches [`ReverseProxySettings.path_mask`]
     #[serde(default)]
     pub(crate) h3_backward_compatibility: bool,
 }
 
-#[derive(Deserialize)]
+/// The set of connection forwarder settings
+#[derive(Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "rt_doc", derive(RuntimeDoc))]
 pub enum ForwardProtocolSettings {
     /// A direct forwarder routes a connection directly to its target host
     Direct(DirectForwarderSettings),
@@ -201,15 +236,15 @@ pub enum ForwardProtocolSettings {
     Socks5(Socks5ForwarderSettings),
 }
 
-#[derive(Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct DirectForwarderSettings {}
 
-#[derive(Deserialize)]
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "rt_doc", derive(Getter, RuntimeDoc))]
 pub struct Socks5ForwarderSettings {
     /// The address of a proxy
     pub(crate) address: SocketAddr,
-    /// The extended authentication flag.
-    /// See [`Socks5ForwarderSettingsBuilder::extended_auth`] for details.
+    /// Whether the extended authentication is enabled
     #[serde(default)]
     pub(crate) extended_auth: bool,
 }
@@ -218,7 +253,9 @@ pub struct Socks5ForwarderSettingsBuilder {
     settings: Socks5ForwarderSettings,
 }
 
-#[derive(Clone, Default, Deserialize)]
+/// The set of enabled client listener codecs
+#[derive(Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "rt_doc", derive(RuntimeDoc))]
 pub struct ListenProtocolSettings {
     /// HTTP/1.1 listener settings
     #[serde(default)]
@@ -231,14 +268,18 @@ pub struct ListenProtocolSettings {
     pub quic: Option<QuicSettings>,
 }
 
-#[derive(Deserialize)]
+/// The ICMP forwarding settings.
+/// Setting up this feature requires superuser rights on some systems.
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "rt_doc", derive(Getter, RuntimeDoc))]
 pub struct IcmpSettings {
-    /// The name of an interface to bind the ICMP socket to
+    /// The name of a network interface to bind the outbound ICMP socket to
+    #[serde(default = "IcmpSettings::default_interface_name")]
     pub(crate) interface_name: String,
     /// Timeout of tunneled ICMP requests
     #[serde(default = "IcmpSettings::default_request_timeout")]
-    #[serde(rename(deserialize = "request_timeout_secs"))]
-    #[serde(deserialize_with = "deserialize_duration_secs")]
+    #[serde(rename = "request_timeout_secs")]
+    #[serde(deserialize_with = "deserialize_duration_secs", serialize_with = "serialize_duration_secs")]
     pub(crate) request_timeout: Duration,
     /// The capacity of the ICMP multiplexer received messages queue.
     /// Decreasing it may cause packet dropping in case the multiplexer cannot keep up the pace.
@@ -248,26 +289,32 @@ pub struct IcmpSettings {
     pub(crate) recv_message_queue_capacity: usize,
 }
 
-#[derive(Deserialize)]
+/// The metrics gathering request handler settings
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "rt_doc", derive(Getter, RuntimeDoc))]
 pub struct MetricsSettings {
     /// The address to listen on for settings export requests
     #[serde(default = "MetricsSettings::default_listen_address")]
     pub(crate) address: SocketAddr,
     /// Timeout of a metrics request
     #[serde(default = "MetricsSettings::default_request_timeout")]
-    #[serde(rename(deserialize = "request_timeout_secs"))]
-    #[serde(deserialize_with = "deserialize_duration_secs")]
+    #[serde(rename = "request_timeout_secs")]
+    #[serde(deserialize_with = "deserialize_duration_secs", serialize_with = "serialize_duration_secs")]
     pub(crate) request_timeout: Duration,
 }
 
-#[derive(Deserialize, Clone)]
+/// The set of HTTP/1.1 listener codec settings
+#[derive(Serialize, Deserialize, Clone)]
+#[cfg_attr(feature = "rt_doc", derive(Getter, RuntimeDoc))]
 pub struct Http1Settings {
     /// Buffer size for outgoing traffic
     #[serde(default = "Http1Settings::default_upload_buffer_size")]
     pub(crate) upload_buffer_size: usize,
 }
 
-#[derive(Deserialize, Clone)]
+/// The set of HTTP/2 listener codec settings
+#[derive(Serialize, Deserialize, Clone)]
+#[cfg_attr(feature = "rt_doc", derive(Getter, RuntimeDoc))]
 pub struct Http2Settings {
     /// The initial window size (in octets) for connection-level flow control for received data
     #[serde(default = "Http2Settings::default_initial_connection_window_size")]
@@ -286,7 +333,9 @@ pub struct Http2Settings {
     pub(crate) header_table_size: u32,
 }
 
-#[derive(Deserialize, Clone)]
+/// The set of QUIC listener codec settings
+#[derive(Serialize, Deserialize, Clone)]
+#[cfg_attr(feature = "rt_doc", derive(Getter, RuntimeDoc))]
 pub struct QuicSettings {
     /// The size of UDP payloads that the endpoint is willing to receive. UDP datagrams with
     /// payloads larger than this limit are not likely to be processed.
@@ -393,35 +442,35 @@ impl Settings {
         Ok(())
     }
 
-    fn default_listen_address() -> SocketAddr {
+    pub fn default_listen_address() -> SocketAddr {
         SocketAddr::from((Ipv4Addr::UNSPECIFIED, 443))
     }
 
-    fn default_ipv6_available() -> bool {
+    pub fn default_ipv6_available() -> bool {
         true
     }
 
-    fn default_allow_private_network_connections() -> bool {
+    pub fn default_allow_private_network_connections() -> bool {
         false
     }
 
-    fn default_tls_handshake_timeout() -> Duration {
+    pub fn default_tls_handshake_timeout() -> Duration {
         Duration::from_secs(10)
     }
 
-    fn default_client_listener_timeout() -> Duration {
+    pub fn default_client_listener_timeout() -> Duration {
         Duration::from_secs(10 * 60)
     }
 
-    fn default_connection_establishment_timeout() -> Duration {
+    pub fn default_connection_establishment_timeout() -> Duration {
         Duration::from_secs(30)
     }
 
-    fn default_tcp_connections_timeout() -> Duration {
+    pub fn default_tcp_connections_timeout() -> Duration {
         Duration::from_secs(604800) // 1 week (match client tcpip module)
     }
 
-    fn default_udp_connections_timeout() -> Duration {
+    pub fn default_udp_connections_timeout() -> Duration {
         Duration::from_secs(300) // 5 minutes (match client tcpip module)
     }
 }
@@ -431,7 +480,6 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             listen_address: SocketAddr::from((Ipv4Addr::UNSPECIFIED, 0)),
-            reverse_proxy: None,
             ipv6_available: false,
             allow_private_network_connections: true,
             tls_handshake_timeout: Settings::default_tls_handshake_timeout(),
@@ -446,6 +494,7 @@ impl Default for Settings {
                 quic: Some(QuicSettings::builder().build()),
             },
             authenticator: None,
+            reverse_proxy: None,
             icmp: None,
             metrics: Default::default(),
             built: false,
@@ -514,7 +563,7 @@ impl Http1Settings {
         Http1SettingsBuilder::new()
     }
 
-    fn default_upload_buffer_size() -> usize {
+    pub fn default_upload_buffer_size() -> usize {
         32 * 1024
     }
 }
@@ -524,23 +573,23 @@ impl Http2Settings {
         Http2SettingsBuilder::new()
     }
 
-    fn default_initial_connection_window_size() -> u32 {
+    pub fn default_initial_connection_window_size() -> u32 {
         8 * 1024 * 1024
     }
 
-    fn default_initial_stream_window_size() -> u32 {
+    pub fn default_initial_stream_window_size() -> u32 {
         128 * 1024 // Chrome constant
     }
 
-    fn default_max_concurrent_streams() -> u32 {
+    pub fn default_max_concurrent_streams() -> u32 {
         1000 // Chrome constant
     }
 
-    fn default_max_frame_size() -> u32 {
+    pub fn default_max_frame_size() -> u32 {
         1 << 14 // Firefox constant
     }
 
-    fn default_header_table_size() -> u32 {
+    pub fn default_header_table_size() -> u32 {
         65536
     }
 }
@@ -550,55 +599,55 @@ impl QuicSettings {
         QuicSettingsBuilder::new()
     }
 
-    fn default_recv_udp_payload_size() -> usize {
+    pub fn default_recv_udp_payload_size() -> usize {
         1350
     }
 
-    fn default_send_udp_payload_size() -> usize {
+    pub fn default_send_udp_payload_size() -> usize {
         1350
     }
 
-    fn default_initial_max_data() -> u64 {
+    pub fn default_initial_max_data() -> u64 {
         100 * 1024 * 1024
     }
 
-    fn default_initial_max_stream_data_bidi_local() -> u64 {
+    pub fn default_initial_max_stream_data_bidi_local() -> u64 {
         1024 * 1024
     }
 
-    fn default_initial_max_stream_data_bidi_remote() -> u64 {
+    pub fn default_initial_max_stream_data_bidi_remote() -> u64 {
         1024 * 1024
     }
 
-    fn default_initial_max_stream_data_uni() -> u64 {
+    pub fn default_initial_max_stream_data_uni() -> u64 {
         1024 * 1024
     }
 
-    fn default_initial_max_streams_bidi() -> u64 {
+    pub fn default_initial_max_streams_bidi() -> u64 {
         4 * 1024
     }
 
-    fn default_initial_max_streams_uni() -> u64 {
+    pub fn default_initial_max_streams_uni() -> u64 {
         4 * 1024
     }
 
-    fn default_max_connection_window() -> u64 {
+    pub fn default_max_connection_window() -> u64 {
         24 * 1024 * 1024
     }
 
-    fn default_max_stream_window() -> u64 {
+    pub fn default_max_stream_window() -> u64 {
         16 * 1024 * 1024
     }
 
-    fn default_disable_active_migration() -> bool {
+    pub fn default_disable_active_migration() -> bool {
         true
     }
 
-    fn default_enable_early_data() -> bool {
+    pub fn default_enable_early_data() -> bool {
         true
     }
 
-    fn default_message_queue_capacity() -> usize {
+    pub fn default_message_queue_capacity() -> usize {
         4 * 1024
     }
 }
@@ -626,11 +675,19 @@ impl IcmpSettings {
         IcmpSettingsBuilder::new()
     }
 
-    fn default_request_timeout() -> Duration {
+    pub fn default_interface_name() -> String {
+        if cfg!(target_os = "linux") {
+            "eth0"
+        } else {
+            "en0"
+        }.into()
+    }
+
+    pub fn default_request_timeout() -> Duration {
         Duration::from_secs(3)
     }
 
-    fn default_message_queue_capacity() -> usize {
+    pub fn default_message_queue_capacity() -> usize {
         256
     }
 }
@@ -640,11 +697,11 @@ impl MetricsSettings {
         MetricsSettingsBuilder::new()
     }
 
-    fn default_listen_address() -> SocketAddr {
+    pub fn default_listen_address() -> SocketAddr {
         (Ipv4Addr::UNSPECIFIED, 1987).into()
     }
 
-    fn default_request_timeout() -> Duration {
+    pub fn default_request_timeout() -> Duration {
         Duration::from_secs(3)
     }
 }
@@ -663,7 +720,6 @@ impl SettingsBuilder {
         Self {
             settings: Settings {
                 listen_address: Settings::default_listen_address(),
-                reverse_proxy: None,
                 ipv6_available: Settings::default_ipv6_available(),
                 allow_private_network_connections: Settings::default_allow_private_network_connections(),
                 tls_handshake_timeout: Settings::default_tls_handshake_timeout(),
@@ -674,6 +730,7 @@ impl SettingsBuilder {
                 forward_protocol: Default::default(),
                 listen_protocols: Default::default(),
                 authenticator: None,
+                reverse_proxy: None,
                 icmp: None,
                 metrics: Default::default(),
                 built: true,
@@ -735,6 +792,13 @@ impl SettingsBuilder {
         self
     }
 
+    /// Set timeout of outgoing connection establishment.
+    /// For example, it is related to client's connection requests.
+    pub fn connection_establishment_timeout(mut self, v: Duration) -> Self {
+        self.settings.connection_establishment_timeout = v;
+        self
+    }
+
     /// Set timeout of tunneled TCP connections
     pub fn tcp_connections_timeout(mut self, v: Duration) -> Self {
         self.settings.tcp_connections_timeout = v;
@@ -770,6 +834,12 @@ impl SettingsBuilder {
         self.settings.icmp = Some(x);
         self
     }
+
+    /// Set the metrics request listener settings
+    pub fn metrics(mut self, x: MetricsSettings) -> Self {
+        self.settings.metrics = Some(x);
+        self
+    }
 }
 
 impl TlsSettingsBuilder {
@@ -791,7 +861,8 @@ impl TlsSettingsBuilder {
         Ok(self.settings)
     }
 
-    /// Set the main TLS hosts
+    /// Set the main TLS hosts.
+    /// Used for traffic tunneling and service requests handling.
     pub fn main_hosts(mut self, hosts: Vec<TlsHostInfo>) -> Self {
         self.settings.main_hosts = hosts;
         self
@@ -1173,6 +1244,13 @@ fn deserialize_duration_secs<'de, D>(deserializer: D) -> Result<Duration, D::Err
 
     let x = deserializer.deserialize_u64(Visitor)?;
     Ok(Duration::from_secs(x))
+}
+
+fn serialize_duration_secs<S>(x: &Duration, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::ser::Serializer,
+{
+    serializer.serialize_u64(x.as_secs())
 }
 
 fn deserialize_file_path<'de, D>(deserializer: D) -> Result<String, D::Error>

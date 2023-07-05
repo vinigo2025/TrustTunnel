@@ -118,6 +118,7 @@ impl TlsDemux {
                     cert_chain: if cfg!(test) {
                         Default::default()
                     } else {
+                        // @todo: check if cert is expired?
                         utils::load_certs(&x.cert_chain_path)?
                     },
                     key: if cfg!(test) {

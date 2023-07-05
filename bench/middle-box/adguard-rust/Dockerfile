@@ -16,28 +16,16 @@ COPY $ENDPOINT_DIR /bench/$ENDPOINT_DIR
 
 WORKDIR /bench/
 RUN cd "$ENDPOINT_DIR" && \
+    cargo build --release --bin setup_wizard && \
     cargo build --release --bin vpn_endpoint && \
-    mv ./target/release/vpn_endpoint /bench/ && \
-    cd examples/my_vpn && \
-    openssl req -config openssl.conf -new -x509 -sha256 -newkey rsa:2048 -nodes -days 1000 \
-        -keyout /bench/key.pem -out /bench/cert.pem \
-        -subj "/C=de/CN=$ENDPOINT_HOSTNAME" \
-        -addext "subjectAltName = DNS:*.$ENDPOINT_HOSTNAME"
+    mv ./target/release/setup_wizard ./target/release/vpn_endpoint /bench/
 
-RUN echo "\
-listen_address = \"[::]:4433\"\n\
-allow_private_network_connections = true\n\
-[listen_protocols.http1]\n\
-[listen_protocols.http2]\n\
-[listen_protocols.quic]\n\
-" >>$CONFIG_FILE
-
-RUN echo "\
-[[main_hosts]]\n\
-hostname = \"$ENDPOINT_HOSTNAME\"\n\
-cert_chain_path = \"cert.pem\"\n\
-private_key_path = \"key.pem\"\n\
-" >>$TLS_HOSTS_SETTINGS_FILE
+RUN ./setup_wizard --mode non-interactive  \
+    --address [::]:4433 \
+    --creds premium:premium  \
+    --hostname "$ENDPOINT_HOSTNAME"  \
+    --lib-settings "$CONFIG_FILE"  \
+    --hosts-settings "$TLS_HOSTS_SETTINGS_FILE"
 
 ENV LOG_LEVEL=$LOG_LEVEL \
     CONFIG_FILE=$CONFIG_FILE \

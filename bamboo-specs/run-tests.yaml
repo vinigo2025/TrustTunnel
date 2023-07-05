@@ -29,10 +29,18 @@ Test on Linux:
         force-clean-build: 'true'
     - script:
         interpreter: SHELL
+        description: Run tests
         scripts:
           - |-
             set -x -e
             cargo test --workspace
+    - script:
+        interpreter: SHELL
+        description: Build binaries
+        scripts:
+          - |-
+            set -x -e
+            cargo build --bins
   requirements:
     - adg-privileged-docker
   artifact-subscriptions: [ ]
@@ -45,10 +53,18 @@ Test on macOS:
         force-clean-build: 'true'
     - script:
         interpreter: SHELL
+        description: Run tests
         scripts:
           - |-
             set -x -e
             cargo test --workspace --target x86_64-apple-darwin
+    - script:
+        interpreter: SHELL
+        description: Build binaries
+        scripts:
+          - |-
+            set -x -e
+            cargo build --bins --target x86_64-apple-darwin
   requirements:
     - macOS 11.0 or later
   artifact-subscriptions: [ ]

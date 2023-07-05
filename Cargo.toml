@@ -1,25 +1,10 @@
-[package]
-name = "vpn_endpoint"
-version = "0.9.49"
-authors = ["Sergei Gunchenko <s.gunchenko@adguard.com>"]
-edition = "2021"
-
-[[bin]]
-name = "vpn_endpoint"
-doctest = false
-
 [workspace]
-# The empty workspace prevents redundant builds of each component
+members = [
+    "endpoint",
+    "lib",
+    "macros",
+    "tools",
+]
 
-[dependencies]
-clap = "=4.3.8"
-console-subscriber = { version = "=0.1.9", optional = true }
-log = "=0.4.19"
-sentry = { version = "=0.31.5", default-features = false, features = ["backtrace", "panic", "reqwest", "rustls", "contexts"] }
-tokio = { version = "=1.28.2", features = ["rt-multi-thread", "signal"] }
-toml = { version = "=0.7.4", default-features = false, features = ["parse"] }
-vpn_libs_endpoint = { version = "0.1", path = "lib" }
-
-[features]
-# RUSTFLAGS="--cfg tokio_unstable" must also be set
-tracing = ["vpn_libs_endpoint/tracing", "tokio/tracing", "dep:console-subscriber"]
+[profile.release]
+debug = true

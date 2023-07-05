@@ -1,5 +1,7 @@
 #[macro_use]
 extern crate log;
+#[cfg(feature = "rt_doc")]
+extern crate macros;
 
 pub mod authentication;
 pub mod core;
