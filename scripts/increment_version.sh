@@ -11,7 +11,7 @@ increment_version() {
   echo ${major}.${minor}.$((revision+1))
 }
 
-VERSION=$(cat "$MANIFEST_FILE" | grep "version = " | head -n 1 | sed -e 's/version = "\(.*\)"/\1/')
+VERSION=$(grep "version = " "$MANIFEST_FILE" | head -n 1 | sed -e 's/version = "\(.*\)"/\1/')
 
 argument_version=$1
 if [ -z "$argument_version" ]
@@ -21,7 +21,7 @@ else
   NEW_VERSION=$1
 fi
 
-if ! [[ "${NEW_VERSION}" =~ ^[0-9]\.[0-9].[0-9]*$ ]]
+if ! [[ "${NEW_VERSION}" =~ ^[0-9]\.[0-9]\.[0-9]*$ ]]
 then
   echo "New version is invalid: ${NEW_VERSION}"
   exit 1
