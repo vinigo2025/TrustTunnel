@@ -209,7 +209,7 @@ impl QuicMultiplexer {
         for _ in 0..READ_BUDGET {
             match self.socket.try_recv_from(&mut buffer) {
                 Ok((n, peer)) => {
-                    let header = match quiche::Header::from_slice(&mut buffer, quiche::MAX_CONN_ID_LEN) {
+                    let header = match quiche::Header::from_slice(&mut buffer[..n], quiche::MAX_CONN_ID_LEN) {
                         Ok(h) => {
                             log_id!(trace, self.id, "Received QUIC packet: {:?}", h);
                             h
