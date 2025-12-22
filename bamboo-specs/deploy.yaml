@@ -153,7 +153,7 @@ Deploy artifacts:
             git tag -d ${TAG} || true
             git tag ${TAG}
             git remote set-url origin "${bamboo_planRepository_1_repositoryUrl}"
-            git push origin --follow-tags
+            git push origin ${TAG}
 
             # TODO: change to bamboo_githubPublicRepoPassword when repo become public
             git clone https://${bamboo_githubPrivateRepoPassword}:@github.com/TrustTunnel/TrustTunnel/
