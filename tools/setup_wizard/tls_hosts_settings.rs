@@ -105,22 +105,26 @@ fn ask_for_existing_cert() -> Option<Cert> {
 
 fn build_settings_from_cert(cert: Cert) -> TlsHostsSettings {
     let hostname = cert.common_name.clone();
+    let allowed_sni = ask_for_alternative_snis();
 
     TlsHostsSettings::builder()
         .main_hosts(vec![TlsHostInfo {
             hostname: hostname.clone(),
             cert_chain_path: cert.cert_path.clone(),
             private_key_path: cert.key_path.clone(),
+            allowed_sni,
         }])
         .ping_hosts(vec![TlsHostInfo {
             hostname: format!("ping.{}", hostname),
             cert_chain_path: cert.cert_path.clone(),
             private_key_path: cert.key_path.clone(),
+            allowed_sni: vec![],
         }])
         .speedtest_hosts(vec![TlsHostInfo {
             hostname: format!("speed.{}", hostname),
             cert_chain_path: cert.cert_path.clone(),
             private_key_path: cert.key_path.clone(),
+            allowed_sni: vec![],
         }])
         .build()
         .expect("Couldn't build TLS hosts settings")
@@ -488,4 +492,29 @@ fn parse_cert_expiration(cert_pem: &str) -> Option<String> {
         not_after.month(),
         not_after.day()
     ))
+}
+
+fn ask_for_alternative_snis() -> Vec<String> {
+    if crate::get_mode() == Mode::NonInteractive {
+        return vec![];
+    }
+    
+    if !ask_for_agreement("Do you want to configure alternative SNIs?") {
+        return vec![];
+    }
+
+    let input: String = ask_for_input(
+        "Enter alternative SNIs (comma-separated)",
+        Some(String::new()),
+    );
+
+    if input.trim().is_empty() {
+        return vec![];
+    }
+
+    input
+        .split(',')
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect()
 }

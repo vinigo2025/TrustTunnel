@@ -149,11 +149,13 @@ async fn run_endpoint(endpoint_address: &SocketAddr, proxy_address: &SocketAddr)
             hostname: common::MAIN_DOMAIN_NAME.to_string(),
             cert_chain_path: cert_key_path.to_string(),
             private_key_path: cert_key_path.to_string(),
+            allowed_sni: vec![],
         }])
         .reverse_proxy_hosts(vec![TlsHostInfo {
             hostname: format!("hello.{}", common::MAIN_DOMAIN_NAME),
             cert_chain_path: cert_key_path.to_string(),
             private_key_path: cert_key_path.to_string(),
+            allowed_sni: vec![],
         }])
         .build()
         .unwrap();

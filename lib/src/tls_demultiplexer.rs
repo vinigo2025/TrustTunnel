@@ -23,6 +23,8 @@ struct Host {
     cert_chain_path: String,
     /// Quiche only accepts paths
     key_path: String,
+    /// Alternative SNIs that should be accepted for this host
+    allowed_sni: Vec<String>,
 }
 
 #[derive(Clone)]
@@ -73,6 +75,7 @@ pub(crate) struct TlsDemux {
     ping_hosts: HashMap<String, Host>,
     speedtest_hosts: HashMap<String, Host>,
     tunnel_protocols: SmallVec<[Protocol; 3]>,
+    allowed_sni_to_main_host: HashMap<String, String>,
 }
 
 impl Protocol {
@@ -125,6 +128,7 @@ impl TlsDemux {
                     },
                     cert_chain_path: x.cert_chain_path.clone(),
                     key_path: x.private_key_path.clone(),
+                    allowed_sni: x.allowed_sni.clone(),
                 },
             ))
         };
@@ -135,8 +139,19 @@ impl TlsDemux {
             };
         }
 
+        let main_hosts: HashMap<String, Host> = make_hosts!(tls_settings.main_hosts)?;
+
+        let allowed_sni_to_main_host: HashMap<String, String> = main_hosts
+            .iter()
+            .flat_map(|(hostname, host)| {
+                host.allowed_sni
+                    .iter()
+                    .map(move |sni| (sni.clone(), hostname.clone()))
+            })
+            .collect();
+
         Ok(Self {
-            main_hosts: make_hosts!(tls_settings.main_hosts)?,
+            main_hosts,
             ping_hosts: make_hosts!(tls_settings.ping_hosts)?,
             speedtest_hosts: make_hosts!(tls_settings.speedtest_hosts)?,
             reverse_proxy_hosts: match settings.reverse_proxy {
@@ -156,6 +171,7 @@ impl TlsDemux {
                 }
                 x
             },
+            allowed_sni_to_main_host,
         })
     }
 
@@ -250,6 +266,14 @@ impl TlsDemux {
                 Channel::Tunnel,
                 host,
                 Some(String::from(auth_creds)),
+            )
+        } else if let Some(main_hostname) = self.allowed_sni_to_main_host.get(&sni) {
+            let host = self.main_hosts.get(main_hostname).unwrap();
+            (
+                self.select_tunnel_channel_protocol(parsed_alpn.iter(), alpn)?,
+                Channel::Tunnel,
+                host,
+                None,
             )
         } else {
             return Err(format!("Unexpected SNI {}", sni));
@@ -635,5 +659,48 @@ mod tests {
         TlsDemux::new(&settings, &TlsHostsSettings::default())
             .map(|_| ())
             .unwrap();
+    }
+
+    #[test]
+    fn alternative_sni_support() {
+        const MAIN_HOST: &str = "example.org";
+        const ALT_SNI_1: &str = "fake1.com";
+        const ALT_SNI_2: &str = "fake2.net";
+
+        let settings = Settings::default();
+
+        let mut tls_settings = TlsHostsSettings::default();
+        tls_settings.main_hosts = vec![TlsHostInfo {
+            hostname: MAIN_HOST.to_string(),
+            allowed_sni: vec![ALT_SNI_1.to_string(), ALT_SNI_2.to_string()],
+            ..Default::default()
+        }];
+
+        let demux = TlsDemux::new(&settings, &tls_settings).unwrap();
+        let advertised_alpn = [Protocol::Http1.as_alpn().as_bytes()].into_iter();
+
+        let meta = demux
+            .select(advertised_alpn.clone(), MAIN_HOST.to_string())
+            .unwrap();
+        assert_eq!(meta.channel, Channel::Tunnel);
+        assert_eq!(meta.sni, MAIN_HOST);
+
+        let meta = demux
+            .select(advertised_alpn.clone(), ALT_SNI_1.to_string())
+            .unwrap();
+        assert_eq!(meta.channel, Channel::Tunnel);
+        assert_eq!(meta.sni, ALT_SNI_1);
+        assert!(meta.sni_auth_creds.is_none());
+
+        let meta = demux
+            .select(advertised_alpn.clone(), ALT_SNI_2.to_string())
+            .unwrap();
+        assert_eq!(meta.channel, Channel::Tunnel);
+        assert_eq!(meta.sni, ALT_SNI_2);
+        assert!(meta.sni_auth_creds.is_none());
+
+        demux
+            .select(advertised_alpn.clone(), "unknown.sni".to_string())
+            .expect_err("Unknown SNI should fail");
     }
 }

@@ -212,21 +212,25 @@ pub async fn run_endpoint(listen_address: &SocketAddr) {
             hostname: MAIN_DOMAIN_NAME.to_string(),
             cert_chain_path: cert_key_path.to_string(),
             private_key_path: cert_key_path.to_string(),
+            allowed_sni: vec![],
         }])
         .ping_hosts(vec![TlsHostInfo {
             hostname: format!("ping.{}", MAIN_DOMAIN_NAME),
             cert_chain_path: cert_key_path.to_string(),
             private_key_path: cert_key_path.to_string(),
+            allowed_sni: vec![],
         }])
         .speedtest_hosts(vec![TlsHostInfo {
             hostname: format!("speed.{}", MAIN_DOMAIN_NAME),
             cert_chain_path: cert_key_path.to_string(),
             private_key_path: cert_key_path.to_string(),
+            allowed_sni: vec![],
         }])
         .reverse_proxy_hosts(vec![TlsHostInfo {
             hostname: format!("hello.{}", MAIN_DOMAIN_NAME),
             cert_chain_path: cert_key_path.to_string(),
             private_key_path: cert_key_path.to_string(),
+            allowed_sni: vec![],
         }])
         .build()
         .unwrap();

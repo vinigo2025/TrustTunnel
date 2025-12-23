@@ -155,6 +155,7 @@ async fn run_endpoint(
             hostname: common::MAIN_DOMAIN_NAME.to_string(),
             cert_chain_path: cert_key_path.to_string(),
             private_key_path: cert_key_path.to_string(),
+            allowed_sni: vec![],
         }])
         .build()
         .unwrap();

@@ -195,6 +195,10 @@ pub struct TlsHostInfo {
     /// until the next [`crate::core::Core::reload_tls_hosts_settings()`] call.
     #[serde(deserialize_with = "deserialize_file_path")]
     pub private_key_path: String,
+    /// List of alternative SNIs that should be accepted for this host.
+    /// When a client sends one of these SNIs, the connection will use this host's certificate.
+    #[serde(default)]
+    pub allowed_sni: Vec<String>,
 }
 
 #[derive(Serialize, Deserialize)]
