@@ -40,56 +40,52 @@ run_through_tun() {
   local remote_ip="$4"
 
   for jobs_num in "${JOB_NUMS[@]}"; do
-    echo "Running download test with ${jobs_num} parallel jobs..."
+    echo "Running HTTP2 download test with ${jobs_num} parallel jobs..."
     run_test "$set_up_test_suite_cmd" "$tear_down_test_suite_cmd" "$results_host_dir_path" \
-      --output "$CONTAINER_RESULTS_DIR_PATH/lf-dl-$jobs_num.json" \
+      --output "$CONTAINER_RESULTS_DIR_PATH/lf-dl-h2-$jobs_num.json" \
       --jobs "$jobs_num" \
-      --download "http://$remote_ip:8080/download/1GiB.dat"
+      --proto "http2" \
+      --download "https://$remote_ip:8080/download/1GiB.dat"
     echo "...done"
 
-    echo "Running upload test with ${jobs_num} parallel jobs..."
+    echo "Running HTTP3 download test with ${jobs_num} parallel jobs..."
     run_test "$set_up_test_suite_cmd" "$tear_down_test_suite_cmd" "$results_host_dir_path" \
-      --output "$CONTAINER_RESULTS_DIR_PATH/lf-ul-$jobs_num.json" \
+      --output "$CONTAINER_RESULTS_DIR_PATH/lf-dl-h3-$jobs_num.json" \
       --jobs "$jobs_num" \
-      --upload "http://$remote_ip:8080/upload"
+      --proto "http3" \
+      --download "https://$remote_ip:8080/download/1GiB.dat"
     echo "...done"
 
-    echo "Running iperf download over TCP test with ${jobs_num} parallel jobs..."
+    echo "Running HTTP2 upload test with ${jobs_num} parallel jobs..."
     run_test "$set_up_test_suite_cmd" "$tear_down_test_suite_cmd" "$results_host_dir_path" \
-      --output "$CONTAINER_RESULTS_DIR_PATH/iperf-tcp-dl-$jobs_num.json" \
+      --output "$CONTAINER_RESULTS_DIR_PATH/lf-ul-h2-$jobs_num.json" \
       --jobs "$jobs_num" \
-      --iperf "$remote_ip" \
-      --iperf-proto tcp \
-      --iperf-dir download
+      --proto "http2" \
+      --upload "https://$remote_ip:8080/upload"
     echo "...done"
 
-    echo "Running iperf upload over TCP test with ${jobs_num} parallel jobs..."
+    echo "Running HTTP3 upload test with ${jobs_num} parallel jobs..."
     run_test "$set_up_test_suite_cmd" "$tear_down_test_suite_cmd" "$results_host_dir_path" \
-      --output "$CONTAINER_RESULTS_DIR_PATH/iperf-tcp-ul-$jobs_num.json" \
+      --output "$CONTAINER_RESULTS_DIR_PATH/lf-ul-h3-$jobs_num.json" \
       --jobs "$jobs_num" \
-      --iperf "$remote_ip" \
-      --iperf-proto tcp \
-      --iperf-dir upload
-    echo "...done"
-
-    echo "Running iperf download over UDP test with ${jobs_num} parallel jobs..."
-    run_test "$set_up_test_suite_cmd" "$tear_down_test_suite_cmd" "$results_host_dir_path" \
-      --output "$CONTAINER_RESULTS_DIR_PATH/iperf-udp-dl-$jobs_num.json" \
-      --jobs "$jobs_num" \
-      --iperf "$remote_ip" \
-      --iperf-proto udp \
-      --iperf-dir download
-    echo "...done"
-
-    echo "Running iperf upload over UDP test with ${jobs_num} parallel jobs..."
-    run_test "$set_up_test_suite_cmd" "$tear_down_test_suite_cmd" "$results_host_dir_path" \
-      --output "$CONTAINER_RESULTS_DIR_PATH/iperf-udp-ul-$jobs_num.json" \
-      --jobs "$jobs_num" \
-      --iperf "$remote_ip" \
-      --iperf-proto udp \
-      --iperf-dir upload
+      --proto "http3" \
+      --upload "https://$remote_ip:8080/upload"
     echo "...done"
   done
+
+  echo "Running HTTP2 small file download test"
+    run_test "$set_up_test_suite_cmd" "$tear_down_test_suite_cmd" "$results_host_dir_path" \
+    --output "$CONTAINER_RESULTS_DIR_PATH/sf-dl-h2.json" \
+    --jobs 1000 \
+    --proto "http2" \
+    --download "https://$remote_ip:8080/download/100KiB.dat"
+
+  echo "Running HTTP3 small file download test"
+  run_test "$set_up_test_suite_cmd" "$tear_down_test_suite_cmd" "$results_host_dir_path" \
+    --output "$CONTAINER_RESULTS_DIR_PATH/sf-dl-h3.json" \
+    --jobs 1000 \
+    --proto "http3" \
+    --download "https://$remote_ip:8080/download/100KiB.dat"
 }
 
 run_through_proxy() {
@@ -107,14 +103,14 @@ run_through_proxy() {
       "${common_script_args[@]}" \
       --output "$CONTAINER_RESULTS_DIR_PATH/lf-dl-$jobs_num.json" \
       --jobs "$jobs_num" \
-      --download "http://$remote_ip:8080/download/1GiB.dat"
+      --download "https://$remote_ip:8080/download/1GiB.dat"
     echo "...done"
     echo "Running upload test with ${jobs_num} parallel jobs..."
     run_test "$set_up_test_suite_cmd" "$tear_down_test_suite_cmd" "$results_host_dir_path" \
       "${common_script_args[@]}" \
       --output "$CONTAINER_RESULTS_DIR_PATH/lf-ul-$jobs_num.json" \
       --jobs "$jobs_num" \
-      --upload "http://$remote_ip:8080/upload"
+      --upload "https://$remote_ip:8080/upload"
     echo "...done"
   done
 
@@ -123,7 +119,7 @@ run_through_proxy() {
     "${common_script_args[@]}" \
     --output "$CONTAINER_RESULTS_DIR_PATH/sf-dl.json" \
     --jobs 1000 \
-    --download "http://$remote_ip:8080/download/100KiB.dat"
+    --download "https://$remote_ip:8080/download/100KiB.dat"
   echo "...done"
 }
 
@@ -137,12 +133,12 @@ run_no_vpn() {
   local tear_down_test_suite_cmd=""
   run_through_tun "$set_up_test_suite_cmd" "$tear_down_test_suite_cmd" "$output_dir_path" "$remote_ip" ""
 
-  echo "Running small files download test..."
-  run_test "$set_up_test_suite_cmd" "$tear_down_test_suite_cmd" "$output_dir_path" \
-    --output "$CONTAINER_RESULTS_DIR_PATH/sf-dl.json" \
-    --jobs 1000 \
-    --download "http://$remote_ip:8080/download/100KiB.dat"
-  echo "...done"
+  # echo "Running small files download test..."
+  # run_test "$set_up_test_suite_cmd" "$tear_down_test_suite_cmd" "$output_dir_path" \
+  #   --output "$CONTAINER_RESULTS_DIR_PATH/sf-dl.json" \
+  #   --jobs 1000 \
+  #   --download "https://$remote_ip:8080/download/100KiB.dat"
+  # echo "...done"
 
   echo "Bench without any VPN is done"
 }
@@ -164,12 +160,12 @@ run_through_wg() {
   run_through_tun "$set_up_test_suite_cmd" "$tear_down_test_suite_cmd" "$output_dir" \
     "$remote_ip"
 
-  echo "Running small files download test..."
-  run_test "$set_up_test_suite_cmd" "$tear_down_test_suite_cmd" "$output_dir" \
-    --output "$CONTAINER_RESULTS_DIR_PATH/sf-dl.json" \
-    --jobs 1000 \
-    --download "http://$remote_ip:8080/download/100KiB.dat"
-  echo "...done"
+  # echo "Running small files download test..."
+  # run_test "$set_up_test_suite_cmd" "$tear_down_test_suite_cmd" "$output_dir" \
+  #   --output "$CONTAINER_RESULTS_DIR_PATH/sf-dl.json" \
+  #   --jobs 1000 \
+  #   --download "https://$remote_ip:8080/download/100KiB.dat"
+  # echo "...done"
 
   echo "...done"
 }
@@ -214,7 +210,7 @@ run_through_ag() {
     run_test "$set_up_test_suite_cmd" "$tear_down_test_suite_cmd" "$output_dir/${protocol}/" \
       --output "$CONTAINER_RESULTS_DIR_PATH/sf-dl.json" \
       --jobs 10 \
-      --download "http://$remote_ip:8080/download/100KiB.dat" \
+      --download "https://$remote_ip:8080/download/100KiB.dat" \
       --proxy "socks5://127.0.0.1" \
       --socks-ports-range "(1080,1179)"
     echo "...done"
