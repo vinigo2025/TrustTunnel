@@ -72,7 +72,7 @@ in one or two bytes.
 | `0x05` | `username` | UTF-8 string | yes |
 | `0x06` | `password` | UTF-8 string | yes |
 | `0x07` | `skip_verification` | 1 byte: `0x01` = true, `0x00` = false | no (default `false`) |
-| `0x08` | `certificate` | Concatenated DER-encoded certificates (raw binary) | no |
+| `0x08` | `certificate` | Concatenated DER-encoded certificates (raw binary); omit if the chain is verified by system CAs | no |
 | `0x09` | `upstream_protocol` | 1 byte: `0x01` = `http2`, `0x02` = `http3` | no (default `http2`) |
 | `0x0A` | `anti_dpi` | 1 byte: `0x01` = true, `0x00` = false | no (default `false`) |
 
